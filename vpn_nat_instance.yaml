@@ -1,7 +1,7 @@
 Parameters:
   S3BucketName:
     Type: String
-    Description: An Amazon S3 bucket that is used to store data, job scripts, etc.
+    Description: An Amazon S3 bucket that is used to store data, job scripts, etc..
 
   VPCCIDR:
     Type: String
