@@ -36,6 +36,14 @@ Parameters:
     Type: AWS::EC2::AvailabilityZone::Name
     Description: Availability zone 2.
 
+  KeyPairName:
+    Type: String
+    Description: Name of an existing EC2 keyPair.
+
+  AMIImageName:
+    Type: String
+    Description: Id of the AMI to be used, for example ami-184dc970.
+
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -55,9 +63,13 @@ Metadata:
           - PrivateSubnetBCIDR
           - AvailabilityZone1
           - AvailabilityZone2
+          - KeyPairName
+          - AMIImageName
 
 Resources:
-  
+
+# ---------------------------Subnets 
+
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -124,7 +136,10 @@ Resources:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
-
+      Tags:
+        - Key: Name
+          Value: !Sub "public-route-${AWS::StackName}"
+          
   PrivateRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -196,7 +211,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub "NotBeingUsed-${AWS::StackName}"
+          Value: !Sub "master-${AWS::StackName}"
 
   SecurityGroupIngressHttp:
     DependsOn: SecurityGroup
@@ -209,7 +224,7 @@ Resources:
       GroupId: !GetAtt SecurityGroup.GroupId
       Tags:
         - Key: Name
-          Value: !Sub "http-${AWS::StackName}"
+          Value: !Sub "http-ingress-${AWS::StackName}"
       
   SecurityGroupIngressHttps:
     DependsOn: SecurityGroup
@@ -222,64 +237,74 @@ Resources:
       GroupId: !GetAtt SecurityGroup.GroupId
       Tags:
         - Key: Name
-          Value: !Sub "https-${AWS::StackName}"
+          Value: !Sub "https-ingress-${AWS::StackName}"
 
-  # ---------------------------NatGateway
+  # ---------------------------NATInstance
 
-  NATGatewayA:
-    Type: AWS::EC2::NatGateway
+  NATInstanceA:
+    Type: AWS::EC2::Instance
     DependsOn:
-      - NatGatewayAEIP
-      - PublicSubnetA
+    - PublicSubnetA
+    - SecurityGroup
     Properties:
-      AllocationId: !GetAtt NatGatewayAEIP.AllocationId
-      SubnetId: !Ref PublicSubnetA
+      InstanceType: t2.nano
+      KeyName: !Ref KeyPairName
+      SourceDestCheck: 'false'
+      ImageId: !Ref AMIImageName
+      NetworkInterfaces: 
+      - AssociatePublicIpAddress: 'true'
+        DeviceIndex: '0'
+        GroupSet: 
+        - !Ref SecurityGroup
+        SubnetId: !Ref PublicSubnetA
       Tags:
-        - Key: Name
-          Value: !Sub "public-subnet-a-${AWS::StackName}"
+      - Key: Name
+        Value: "nat-instance-a-${AWS::StackName}"
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y && yum install -y yum-cron && chkconfig yum-cron on
 
-  NATGatewayB:
-    Type: AWS::EC2::NatGateway
+  NATInstanceB:
+    Type: AWS::EC2::Instance
     DependsOn:
-      - NatGatewayBEIP
-      - PublicSubnetB
+    - PublicSubnetB
+    - SecurityGroup
     Properties:
-      AllocationId: !GetAtt NatGatewayBEIP.AllocationId
-      SubnetId: !Ref PublicSubnetB
+      InstanceType: t2.nano
+      KeyName: !Ref KeyPairName
+      SourceDestCheck: 'false'
+      ImageId: !Ref AMIImageName
+      NetworkInterfaces: 
+      - AssociatePublicIpAddress: 'true'
+        DeviceIndex: '0'
+        GroupSet: 
+        - !Ref SecurityGroup
+        SubnetId: !Ref PublicSubnetB
       Tags:
-        - Key: Name
-          Value: !Sub "public-subnet-b-${AWS::StackName}"
+      - Key: Name
+        Value: "nat-instance-b-${AWS::StackName}"
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - yum update -y && yum install -y yum-cron && chkconfig yum-cron on
 
- # ------Elastic IP
-  
-  NatGatewayAEIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: !Sub "nat-gateway-a-${AWS::StackName}"
-
-  NatGatewayBEIP:
-    Type: AWS::EC2::EIP
-    Properties:
-      Domain: vpc
-      Tags:
-        - Key: Name
-          Value: !Sub "nat-gateway-b-${AWS::StackName}"
-          
  # ------Route
    
-  NatGatewayARoute:
+  NATInstanceARoute:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: "0.0.0.0/0"
-      NatGatewayId: !Ref NATGatewayA
+      InstanceId: !Ref NATInstanceA
       
-  NatGatewayBRoute:
+  NATInstanceBRoute:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PrivateRouteTable
       DestinationCidrBlock: "0.0.0.0/0"
-      NatGatewayId: !Ref NATGatewayB
+      InstanceId: !Ref NATInstanceB
